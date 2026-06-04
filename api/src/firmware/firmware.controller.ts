@@ -44,8 +44,12 @@ export class FirmwareController {
   }
 
   @Get('firmware/:id/download')
-  async download(@Param('id') id: string, @Res() res: Response) {
-    const file = await this.firmwareService.download(id);
+  async download(
+    @Param('id') id: string,
+    @Query('actor') actor: string = 'anonymous',
+    @Res() res: Response,
+  ) {
+    const file = await this.firmwareService.download(id, actor);
     file.getStream().pipe(res);
   }
 
