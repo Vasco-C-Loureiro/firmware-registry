@@ -25,24 +25,27 @@ PCL manufactures digital inflation control products. Each product has many hardw
 ---
 
 ## Architecture
+
+```text
 ┌──────────────────────┐
 │   React dashboard     │   (Vite + TypeScript)
 │  list / upload / etc. │
 └───────────┬──────────┘
-│ HTTP (JSON + multipart)
+            │ HTTP (JSON + multipart)
 ┌───────────▼──────────┐
 │     NestJS API        │
 │  products / variants  │
 │  firmware / audit     │
 │  release state machine│
 └─────┬───────────┬─────┘
-│           │
-│ Prisma    │ fs streams
-│           │
+      │           │
+      │ Prisma    │ fs streams
+      │           │
 ┌─────▼─────┐ ┌───▼────────┐
 │ PostgreSQL │ │  storage/  │  (Docker volume)
 │  metadata  │ │  firmware  │
 └───────────┘ └────────────┘
+```
 
 Metadata and relationships live in PostgreSQL. Firmware binaries live on a mounted volume, referenced by path and verified by checksum. In production the volume becomes object storage (S3 or MinIO).
 
