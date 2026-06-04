@@ -3,21 +3,24 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  StreamableFile,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateFirmwareDto } from './dto/create-firmware.dto';
 import { TransitionFirmwareDto } from './dto/transition-firmware.dto';
 import { canTransition } from './release-state';
 import { ReleaseState } from '@prisma/client';
 import { createHash } from 'crypto';
-import { promises as fs } from 'fs';
+import { promises as fs, createReadStream } from 'fs';
 import { join } from 'path';
-import { StreamableFile } from '@nestjs/common';
-import { createReadStream } from 'fs';
 
 @Injectable()
 export class FirmwareService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   async create(
     variantId: string,
@@ -33,7 +36,7 @@ export class FirmwareService {
     const storagePath = join(storageDir, `${dto.version}-${file.originalname}`);
     await fs.writeFile(storagePath, file.buffer);
 
-    return this.prisma.firmwareImage.create({
+    const image = await this.prisma.firmwareImage.create({
       data: {
         variantId,
         version: dto.version,
@@ -45,6 +48,12 @@ export class FirmwareService {
         state: 'DRAFT',
       },
     });
+
+    await this.audit.log(image.id, 'UPLOADED', dto.uploadedBy, {
+      detail: `checksum ${checksum}`,
+    });
+
+    return image;
   }
 
   findAll(variantId?: string, state?: string) {
@@ -67,7 +76,7 @@ export class FirmwareService {
     return image;
   }
 
-  async download(id: string) {
+  async download(id: string, actor: string) {
     const image = await this.prisma.firmwareImage.findUnique({ where: { id } });
     if (!image) throw new NotFoundException(`Firmware image ${id} not found`);
 
@@ -76,6 +85,8 @@ export class FirmwareService {
     if (actual !== image.checksumSha256) {
       throw new ConflictException('Checksum mismatch: stored file may be corrupted');
     }
+
+    await this.audit.log(id, 'DOWNLOADED', actor);
 
     return new StreamableFile(createReadStream(image.storagePath), {
       disposition: `attachment; filename="${image.fileName}"`,
@@ -91,9 +102,7 @@ export class FirmwareService {
       throw new BadRequestException(`Invalid state: ${dto.state}`);
     }
     if (!canTransition(image.state, to)) {
-      throw new BadRequestException(
-        `Illegal transition: ${image.state} -> ${to}`,
-      );
+      throw new BadRequestException(`Illegal transition: ${image.state} -> ${to}`);
     }
 
     const ops: any[] = [];
@@ -109,6 +118,11 @@ export class FirmwareService {
       this.prisma.firmwareImage.update({ where: { id }, data: { state: to } }),
     );
     await this.prisma.$transaction(ops);
+
+    await this.audit.log(id, 'STATE_CHANGED', dto.actor, {
+      fromState: image.state,
+      toState: to,
+    });
 
     return this.prisma.firmwareImage.findUnique({ where: { id } });
   }
