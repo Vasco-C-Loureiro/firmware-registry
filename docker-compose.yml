@@ -16,7 +16,7 @@ services:
       DATABASE_URL: postgresql://registry:registry@db:5432/registry
       STORAGE_DIR: /data/storage
     ports:
-      - "3000:3000"
+      - "3001:3001"
     depends_on:
       - db
     volumes:
