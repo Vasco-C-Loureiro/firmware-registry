@@ -2,3 +2,4 @@ storage/
 .env
 node_modules/
 api/.env
+web/.vite/
